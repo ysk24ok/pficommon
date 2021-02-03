@@ -120,7 +120,9 @@ void rpc_server::stop()
     for (size_t i = 0; i < threads.size(); ++i) {
       rpc_client client("localhost", port());
       auto request_termination = client.call<bool()>(EXIT_MSG);
-      request_termination();
+      try {
+        request_termination();
+      } catch (const cannot_get_connection&) {}
     }
   }
 }
