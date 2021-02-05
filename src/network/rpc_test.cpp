@@ -159,24 +159,27 @@ private:
 RPC_PROC(test_struct, tstruct(tstruct));
 RPC_GEN(1, test_struct_rpc, test_struct);
 static tstruct f_test_struct(tstruct t) { return t; }
-static void struct_server_thread(test_struct_rpc_server& ser)
+static void struct_server_thread(test_struct_rpc_server& ser, uint16_t port, int num_threads)
 {
   ser.set_test_struct(&f_test_struct);
-  ser.serv(31232, 10);
+  ser.serv(port, num_threads);
 }
 TEST(rpc, test_struct)
 {
+  uint16_t port = 31232;
+  int num_threads = 10;
+
   test_struct_rpc_server ser;
   EXPECT_TRUE(ser.is_stopped());
-  thread t(pfi::lang::bind(&struct_server_thread, pfi::lang::ref(ser)));
+  thread t(pfi::lang::bind(&struct_server_thread, pfi::lang::ref(ser), port, num_threads));
   t.start();
 
   sleep(1);
   EXPECT_TRUE(ser.is_running());
 
-  EXPECT_NO_THROW({ test_struct_rpc_client cln1("localhost", 31232); });
+  EXPECT_NO_THROW({ test_struct_rpc_client cln1("localhost", port); });
   {
-    test_struct_rpc_client cln("localhost", 31232);
+    test_struct_rpc_client cln("localhost", port);
     tstruct t1;
     t1.i = 9;
     tstruct t2;
@@ -291,4 +294,35 @@ TEST(rpc, test_rpc_server_timeout)
   ser.stop();
   t.join();
   EXPECT_TRUE(ser.is_stopped());
+}
+
+static void long_running_client(uint16_t port)
+{
+  test_struct_rpc_client cln("localhost", port);
+  tstruct t1;
+  t1.i = 0;
+  EXPECT_NO_THROW({ cln.call_test_struct(t1); });
+  sleep(3);
+}
+
+TEST(rpc, test_server_termination_after_long_running_client_ends)
+{
+  uint16_t port = 31234;
+  int num_threads = 10;
+
+  test_struct_rpc_server server;
+  EXPECT_TRUE(server.is_stopped());
+  thread server_thread(pfi::lang::bind(&struct_server_thread, pfi::lang::ref(server), port, num_threads));
+  server_thread.start();
+  sleep(1);
+  EXPECT_TRUE(server.is_running());
+
+  thread client_thread(pfi::lang::bind(&long_running_client, port));
+  client_thread.start();
+  client_thread.detach();
+  sleep(1);
+
+  server.stop();
+  server_thread.join();
+  EXPECT_TRUE(server.is_stopped());
 }
